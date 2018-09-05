@@ -8,10 +8,14 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <vector>
 #include "TCanvas.h"
+#include "TGraph.h"
+
 
 void loadStyle(){
 
+    
   gStyle->SetCanvasColor(0);
   gStyle->SetPadBorderMode(0);
   gStyle->SetFrameBorderMode(0);
@@ -280,8 +284,8 @@ void giunti_global_numu(TCanvas* c, TLegend *leg){
 
   // Set graph colors and draw
   for( Int_t ifile = 0; ifile < NDATAFILES; ifile++){
-    gr[ifile]->SetFillColor(graph_color[ifile]);
-    gr[ifile]->Draw("LF");
+      gr[ifile]->SetFillColor(graph_color[ifile]);
+      gr[ifile]->Draw("LF");
   }
 
   // Add the best fit point
@@ -295,8 +299,149 @@ void giunti_global_numu(TCanvas* c, TLegend *leg){
   leg->AddEntry(gr[NDATAFILES-2],"Global 2017 2#sigma","f");
   leg->AddEntry(gr[0],"Global 2017 3#sigma","f");
   leg->AddEntry(bfPoint,"Global 2017 best fit","p");
+
   
   return;
+}
+
+
+
+//======================================================================================================
+//
+// Add MINOS/MINOS+ 90%, 3 sigma, 5 sigma contours from May 2018
+//    using published data release & assuming a 2 sided, 2 dof chi2 cut
+//    channel = numu appearance
+//
+//======================================================================================================
+
+void minos_sens( TCanvas* c, TLegend *leg, bool minos90, bool minos3s, bool minos5s ) {
+    TFile* minos_data = new TFile("dataRelease.root", "READ");
+    std::cout << "Successfully opened dataRelease.root" << std::endl;
+    
+    TH2D* dm241vsth24 = (TH2D*)minos_data->Get("dm241vsth24");
+    
+    // SET CONTOURS //
+    double x2min = round(dm241vsth24->GetMinimum()*100.0)/100.0;
+    double contours[3];
+    contours[0] = x2min + 4.61; //90%
+    contours[1] = x2min + 9.00; //3sigma
+    contours[2] = x2min + 24.37; //5sigma
+    dm241vsth24->SetContour(3, contours);
+    
+    TCanvas* c1_minos = new TCanvas();
+    dm241vsth24->Draw("CONT Z LIST");
+    c1_minos->Update();
+    
+    
+    // X-AXIS UNIT CONVERSTION //
+    TObjArray* conts = (TObjArray*)gROOT->GetListOfSpecials()->FindObject("contours");
+    TList* contLevel = NULL;
+    TGraph* curv = NULL;
+    TGraph* gc = NULL;
+    double xval, yval, zval;
+    
+    c1_minos->Close();
+    
+    //vector of vectors: top level vector is the contour level
+    //each vector inside is for each graph within that contour level
+    
+    vector<vector<double>> x90;
+    vector<vector<double>> y90;
+    
+    vector<vector<double>> x3sig;
+    vector<vector<double>> y3sig;
+    
+    vector<vector<double>> x5sig;
+    vector<vector<double>> y5sig;
+    
+    if (conts == NULL) {
+        std::cout << "No contours extracted!" << std::endl;
+    }
+    
+    
+    
+    else {
+        for (int i=0; i<conts->GetSize(); i++) {
+            contLevel = (TList*)conts->At(i);
+            zval = contours[i];
+            
+            //get first graph in contour level
+            curv = (TGraph*)contLevel->First();
+            for (int j=0; j<contLevel->GetSize(); j++) { //loop over graph j in contour level
+                vector<double> xpts;
+                vector<double> ypts;
+                //loop over each point in the graph
+                for (int k=0; k<curv->GetN(); k++) {
+                    curv->GetPoint(k, xval, yval);
+                    xpts.push_back(TMath::Sin(2*xval)*TMath::Sin(2*xval));
+                    ypts.push_back(yval);
+
+                }
+                
+                //add to appropriate top level vector
+                if (i==0) {
+                    x90.push_back(xpts);
+                    y90.push_back(ypts);
+                }
+                if (i==1) {
+                    x3sig.push_back(xpts);
+                    y3sig.push_back(ypts);
+                }
+                else if (i==2) {
+                    x5sig.push_back(xpts);
+                    y5sig.push_back(ypts);
+                }
+                
+                curv=(TGraph*)contLevel->After(curv); //get the next graph in contour level
+                
+            }
+        }
+        
+        // PLOTS //
+        
+        TGraph* cl90_0 = new TGraph(x90[0].size(), &x90[0][0], &y90[0][0]);
+        TGraph* cl90_1 = new TGraph(x90[1].size(), &x90[1][0], &y90[1][0]);
+        TGraph* cl90_2 = new TGraph(x90[2].size(), &x90[2][0], &y90[2][0]);
+        
+        TGraph* cl3sig_0 = new TGraph(x3sig[0].size(), &x3sig[0][0], &y3sig[0][0]);
+        TGraph* cl3sig_1 = new TGraph(x3sig[1].size(), &x3sig[1][0], &y3sig[1][0]);
+        
+        TGraph* cl5sig_0 = new TGraph(x5sig[0].size(), &x5sig[0][0], &y5sig[0][0]);
+        
+        c->cd();
+        
+        if (minos90 == true) {
+            cl90_0->SetLineColor(kBlack);
+            cl90_0->SetLineStyle(2);
+            cl90_0->SetLineWidth(1);
+            cl90_0->Draw("C");
+            leg->AddEntry(cl90_0, "MINOS/MINOS+ 90%");
+        }
+        
+        if (minos3s == true) {
+            cl3sig_0->SetLineColor(kBlue-10);
+            cl3sig_0->SetLineStyle(1);
+            cl3sig_0->SetLineWidth(2);
+            cl3sig_0->Draw("C");
+            leg->AddEntry(cl3sig_0, "MINOS/MINOS+ 3#sigma");
+        }
+        
+        if (minos5s == true) {
+            cl5sig_0->SetLineColor(kBlue-10);
+            cl5sig_0->SetLineStyle(2);
+            cl5sig_0->SetLineWidth(2);
+            cl5sig_0->Draw("C");
+            leg->AddEntry(cl5sig_0, "MINOS/MINOS+ 5#sigma");
+        }
+        
+        
+        
+    }
+    
+    
+    return;
+
+
 }
 
 
@@ -489,7 +634,7 @@ void sbn_nue_plot( bool w90 = false, bool w3s = true, bool w5s = true ){
 // Generate the SBN numu appearance sensitivity plot
 //
 //====================================================================================================
-void sbn_numu_plot( bool w90 = false, bool w3s = true, bool w5s = true ){
+void sbn_numu_plot( bool w90 = false, bool w3s = true, bool w5s = false, bool minos = true ){
 
   loadStyle();
 
@@ -599,7 +744,7 @@ void sbn_numu_plot( bool w90 = false, bool w3s = true, bool w5s = true ){
   std::cout << "Number entries 5 sigma: " << nlines << std::endl;
 
   TGraph *numu5s_curve = new TGraph(nlines,x5,y5);
-
+    
 
   //-------------------------------
   // Draw the sensitivity contours
@@ -618,16 +763,25 @@ void sbn_numu_plot( bool w90 = false, bool w3s = true, bool w5s = true ){
   numu5s_curve->SetLineStyle(2);
   numu5s_curve->SetLineWidth(3);
   if( w5s ) numu5s_curve->Draw("C");
-
+    
   if( w90 ) legend->AddEntry(numu90_curve,"SBN 90%","l");
   if( w3s ) legend->AddEntry(numu3s_curve,"SBN 3#sigma","l");
   if( w5s ) legend->AddEntry(numu5s_curve,"SBN 5#sigma","l");
-  
+    
+    
+    
+  // MINOS/MINOS+ SENSITIVITY //
+  if ( minos ) {
+      minos_sens(d, legend, w90, w3s, w5s);
+  }
+    
+    
+    
   legend->Draw();
 
   char label[200];
 
-  if( w90 || w3s || w5s ){ 
+  if( (w90 || w3s || w5s) && (minos == false) ){
     sprintf( label, "SBN sensitivities assume exposures of:");
     add_plot_label( label, 0.185, 0.31, 0.024, 1, 42, 12 );
     sprintf( label, "6.60#times10^{20} protons on target in ICARUS and SBND");
@@ -645,7 +799,7 @@ void sbn_numu_plot( bool w90 = false, bool w3s = true, bool w5s = true ){
   }
   
   sprintf( label, "#nu_{#mu} disappearance");
-  add_plot_label( label, 0.7, 0.86, 0.03, 1, 62, 22 );
+  add_plot_label( label, 0.7, 0.85, 0.03, 1, 62, 22 );
 
   gPad->RedrawAxis();
   TLine l;
